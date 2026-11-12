@@ -244,9 +244,32 @@ describe('useAutomationAnalytics', () => {
       });
     });
 
-    test('should be hidden for a regular user', () => {
+    test('should re-add the dashboard for a regular user when access is granted', () => {
       mockUsePlatformActiveUser.mockReturnValue({
         activePlatformUser: { is_superuser: false, is_platform_auditor: false },
+      });
+      const { result } = renderHook(() => useAutomationAnalytics());
+      expect(result.current.hidden).toBe(false);
+      expect(asGroup(result.current).children.map((c) => c.id)).toEqual([
+        AwxRoute.AutomationDashboardMainPage,
+      ]);
+    });
+
+    test('should stay hidden for a regular user when access is denied', () => {
+      mockUsePlatformActiveUser.mockReturnValue({
+        activePlatformUser: { is_superuser: false, is_platform_auditor: false },
+      });
+      mockUseAutomationDashboardCollectionStatus.mockReturnValue({
+        collectionStatus: {
+          enabled: true,
+          last_sync: null,
+          show_dashboard: false,
+          show_leaderboard: true,
+        },
+        isLoading: false,
+        canSeeDashboard: false,
+        canSeeLeaderboard: true,
+        error: undefined,
       });
       const { result } = renderHook(() => useAutomationAnalytics());
       expect(result.current.hidden).toBe(true);
@@ -258,6 +281,7 @@ describe('useAutomationAnalytics', () => {
       expect(asGroup(result.current).children.map((c) => c.id)).toEqual([
         AwxRoute.SubscriptionUsage,
         AwxRoute.AutomationCalculator,
+        AwxRoute.AutomationDashboardMainPage,
       ]);
     });
   });
@@ -374,7 +398,32 @@ describe('useAutomationAnalytics', () => {
 
   // --- empty children guard ---
 
-  test('should be hidden when analytics group has no children even for superuser', () => {
+  test('should be hidden when analytics group has no children and access is denied', () => {
+    mockUseAwxNavigation.mockImplementation(() => [
+      {
+        id: AwxRoute.Analytics,
+        label: 'Analytics',
+        path: 'analytics',
+        children: [],
+      },
+    ]);
+    mockUseAutomationDashboardCollectionStatus.mockReturnValue({
+      collectionStatus: {
+        enabled: true,
+        last_sync: null,
+        show_dashboard: false,
+        show_leaderboard: true,
+      },
+      isLoading: false,
+      canSeeDashboard: false,
+      canSeeLeaderboard: true,
+      error: undefined,
+    });
+    const { result } = renderHook(() => useAutomationAnalytics());
+    expect(result.current.hidden).toBe(true);
+  });
+
+  test('should add the dashboard when analytics group has no children and access is granted', () => {
     mockUseAwxNavigation.mockImplementation(() => [
       {
         id: AwxRoute.Analytics,
@@ -384,19 +433,46 @@ describe('useAutomationAnalytics', () => {
       },
     ]);
     const { result } = renderHook(() => useAutomationAnalytics());
-    expect(result.current.hidden).toBe(true);
+    expect(result.current.hidden).toBe(false);
+    expect(asGroup(result.current).children.map((c) => c.id)).toEqual([
+      AwxRoute.AutomationDashboardMainPage,
+    ]);
   });
 
   // --- analytics item not present in nav ---
 
-  test('should return undefined when analytics item is not found in nav', () => {
-    // Nav has no AwxRoute.Analytics node → removeNavigationItemById returns undefined
+  test('should build dashboard nav when analytics item is not found and access is granted', () => {
+    // Nav has no AwxRoute.Analytics node → build a minimal group for org access
     mockUseAwxNavigation.mockImplementation(() => [
       { id: 'some-other-id', label: 'Other', path: 'other', element: <></> },
     ]);
     const { result } = renderHook(() => useAutomationAnalytics());
-    // The if-block is skipped, the raw (undefined) value is returned
-    expect(result.current).toBeUndefined();
+    expect(result.current.id).toBe(AwxRoute.Analytics);
+    expect(result.current.hidden).toBe(false);
+    const children = 'children' in result.current ? (result.current.children ?? []) : [];
+    expect(children.map((child) => child.id)).toEqual([AwxRoute.AutomationDashboardMainPage]);
+  });
+
+  test('should build a hidden nav item when analytics item is missing and access is denied', () => {
+    mockUseAwxNavigation.mockImplementation(() => [
+      { id: 'some-other-id', label: 'Other', path: 'other', element: <></> },
+    ]);
+    mockUseAutomationDashboardCollectionStatus.mockReturnValue({
+      collectionStatus: {
+        enabled: true,
+        last_sync: null,
+        show_dashboard: false,
+        show_leaderboard: true,
+      },
+      isLoading: false,
+      canSeeDashboard: false,
+      canSeeLeaderboard: true,
+      error: undefined,
+    });
+    const { result } = renderHook(() => useAutomationAnalytics());
+    expect(result.current.id).toBe(AwxRoute.Analytics);
+    expect(result.current.hidden).toBe(true);
+    expect('children' in result.current ? result.current.children : undefined).toEqual([]);
   });
 
   // --- analytics is a leaf item (no children) ---
