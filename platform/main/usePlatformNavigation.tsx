@@ -52,6 +52,8 @@ import { PlatformRoute } from './PlatformRoutes';
 import { Redirect } from './Redirect';
 import { usePersonaView } from './persona-view/usePersonaView';
 import { useAutomationDashboardCollectionStatus } from '../../frontend/awx/analytics/automation-dashboard/common/useAutomationDashboardCollectionStatus';
+import { AutomationDashboard } from '../../frontend/awx/analytics/automation-dashboard/AutomationDashboard';
+import { AutomationDashboardMainPage } from '../../frontend/awx/analytics/automation-dashboard/AutomationDashboardMainPage';
 import { useAutomationAnalyticsSettingsNavigation } from './useAutomationAnalyticsSettingsNavigation';
 
 export function usePlatformNavigation() {
@@ -295,17 +297,79 @@ export function useAutomationAnalytics(): PageNavigationItem {
   const { t } = useTranslation();
   const awxService = useHasAwxService();
   const managedCloudInstall = useIsManagedCloudInstall() ?? false;
-  const analytics = removeNavigationItemById(awxNav, AwxRoute.Analytics)!;
   const { activePlatformUser } = usePlatformActiveUser();
-  // canSeeDashboard/canSeeLeaderboard are already applied to the tree by useAwxNavigation
   const {
     collectionStatus,
     isLoading: isCollectionStatusLoading,
     error: collectionStatusError,
+    canSeeDashboard,
   } = useAutomationDashboardCollectionStatus();
   const automationDashboardEnabled = collectionStatus.enabled;
+
+  let analytics = removeNavigationItemById(awxNav, AwxRoute.Analytics);
+  if (!analytics) {
+    // AWX omits the Analytics group for users who are not AWX superusers/auditors.
+    // Add a minimal group for organization-scoped dashboard access.
+    if (isCollectionStatusLoading || !canSeeDashboard) {
+      return {
+        id: AwxRoute.Analytics,
+        label: t('Automation Analytics'),
+        path: 'analytics',
+        children: [],
+        hidden: true,
+      };
+    }
+    analytics = {
+      id: AwxRoute.Analytics,
+      label: t('Automation Analytics'),
+      path: 'analytics',
+      children: [
+        {
+          id: AwxRoute.AutomationDashboardMainPage,
+          label: t('Automation Dashboard'),
+          path: 'automation-dashboard',
+          element: <AutomationDashboardMainPage />,
+          children: [
+            {
+              id: AwxRoute.AutomationDashboard,
+              path: 'dashboard',
+              element: <AutomationDashboard />,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
   if (analytics && 'children' in analytics) {
     analytics.label = t('Automation Analytics');
+
+    // AWX may omit the dashboard child for non-AWX-admin users. Add it when the
+    // metrics service grants dashboard access so the nav entry stays reachable.
+    if (canSeeDashboard) {
+      const existingDashboard = findNavigationItemById(
+        analytics.children,
+        AwxRoute.AutomationDashboardMainPage
+      );
+      if (existingDashboard) {
+        existingDashboard.hidden = false;
+      } else {
+        analytics.children.push({
+          id: AwxRoute.AutomationDashboardMainPage,
+          label: t('Automation Dashboard'),
+          path: 'automation-dashboard',
+          element: <AutomationDashboardMainPage />,
+          children: [
+            {
+              id: AwxRoute.AutomationDashboard,
+              path: 'dashboard',
+              element: <AutomationDashboard />,
+            },
+          ],
+        });
+      }
+    }
+
     if (managedCloudInstall) {
       removeNavigationItemById(analytics.children, AwxRoute.SubscriptionUsage);
     }
@@ -315,7 +379,10 @@ export function useAutomationAnalytics(): PageNavigationItem {
       // A first-load error keeps the route so the page can show its error state
       if (!automationDashboardEnabled && !collectionStatusError) {
         removeNavigationItemById(analytics.children, AwxRoute.AutomationDashboardMainPage);
-      } else if (!activePlatformUser?.is_superuser) {
+      } else if (!canSeeDashboard && !collectionStatusError) {
+        removeNavigationItemById(analytics.children, AwxRoute.AutomationDashboardMainPage);
+      }
+      if (!activePlatformUser?.is_superuser) {
         removeAllButAutomationDashboard(analytics.children);
       }
     }

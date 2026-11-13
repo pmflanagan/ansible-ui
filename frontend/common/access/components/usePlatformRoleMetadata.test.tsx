@@ -180,6 +180,12 @@ describe('usePlatformRoleMetadata', () => {
     expect(orgMeta.permissions['shared.change_organization']).toBe('Can change organization');
     expect(orgMeta.permissions['shared.delete_organization']).toBe('Can delete organization');
     expect(orgMeta.permissions['shared.view_organization']).toBe('Can view organization');
+    expect(orgMeta.permissions['shared.view_automation_dashboard']).toBe(
+      'Can view automation dashboard'
+    );
+    expect(orgMeta.permissions['shared.change_automation_dashboard']).toBe(
+      'Can change automation dashboard'
+    );
   });
 
   it('should include permissions for inventory content type', () => {
